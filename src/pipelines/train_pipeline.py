@@ -1,21 +1,24 @@
 from src.components.data_ingestion import DataIngestion
 from src.components.data_transformation import DataTransformation
 from src.components.model_trainer import ModelTrainer
-from src.components.model_evaluation import ModelEvaluation
 
 if __name__ == "__main__":
-    
+    print("Step 1: Data Ingestion")
     dataingestion = DataIngestion()
     dataingestion.load_dataset()
 
+    print("Step 2: Data Integration")
     datatransformation = DataTransformation()
     datatransformation.integrate_data()
-    datatransformation.split_data(number_of_test_days = 15)
+
+    print("Step 3: Data Splitting")
+    datatransformation.split_data(number_of_test_days=15)
+
+    print("Step 4: Data Transformation")
     datatransformation.transform_data()
 
+    print("Step 5: Model Training")
     modeltrainer = ModelTrainer()
     modeltrainer.train_model()
 
-    modelevaluation = ModelEvaluation()
-    train, targets, predictions = modelevaluation.generate_predictions()
-    modelevaluation.evaluate_predictions(train, targets, predictions)
+    print("\n✅ Training completed successfully.")

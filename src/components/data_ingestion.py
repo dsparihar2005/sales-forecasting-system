@@ -22,42 +22,28 @@ class DataIngestion:
         logging.info(">>> DATA INGESTION STARTED <<<")
 
     def load_dataset(self):
+        """
+        Load dataset from local CSV files instead of MongoDB
+        """
+        logging.info("Loading dataset from local CSV files")
 
-        """
-        This function is responsible for loading dataset from the MongoDB Database
-        """
-        logging.info("executing load_dataset function")
         try:
-            logging.info("performing data extraction")
 
-            load_dotenv(self.dataingestionconfig.env_file_path)
+            train = pd.read_csv("data/train.csv")
+            oil = pd.read_csv("data/oil.csv")
+            stores = pd.read_csv("data/stores.csv")
+            holidays = pd.read_csv("data/holidays_events.csv")
 
-            MONGODB_USERNAME = os.getenv("MONGODB_USERNAME")
-            MONGODB_PASSWORD = os.getenv("MONGODB_PASSWORD")
-            mongodb_uri = f"mongodb+srv://{MONGODB_USERNAME}:{MONGODB_PASSWORD}@storesales.ba5omuw.mongodb.net/?retryWrites=true&w=majority"
-            client = MongoClient(mongodb_uri)
+            os.makedirs(self.dataingestionconfig.artifacts_dir, exist_ok=True)
 
-            data = pd.DataFrame(client["StoreSales"]["Dataset"].find())
-            oil = pd.DataFrame(client["StoreSales"]["Oil"].find())
-            stores = pd.DataFrame(client["StoreSales"]["Stores"].find())
-            holidays = pd.DataFrame(client["StoreSales"]["Holidays"].find())
+            train.to_csv(self.dataingestionconfig.raw_data, index=False)
+            oil.to_csv(self.dataingestionconfig.oil, index=False)
+            stores.to_csv(self.dataingestionconfig.stores, index=False)
+            holidays.to_csv(self.dataingestionconfig.holidays, index=False)
 
-            logging.info("data extraction successful")
-
-            data.drop("_id", axis = 1, inplace = True)
-            oil.drop("_id", axis = 1, inplace = True)
-            stores.drop("_id", axis = 1, inplace = True)
-            holidays.drop("_id", axis = 1, inplace = True)
-
-            os.makedirs(self.dataingestionconfig.artifacts_dir, exist_ok = True)
-            data.to_csv(self.dataingestionconfig.raw_data)
-            oil.to_csv(self.dataingestionconfig.oil)
-            stores.to_csv(self.dataingestionconfig.stores)
-            holidays.to_csv(self.dataingestionconfig.holidays)
-
-            logging.info("data saved to artifacts")
+            logging.info("Local CSV files copied successfully.")
             logging.info(">>> DATA INGESTION COMPLETE <<<")
 
         except Exception as e:
-            logging.info(CustomException(e))
-            print(CustomException(e))
+            logging.error(CustomException(e))
+            raise CustomException(e)

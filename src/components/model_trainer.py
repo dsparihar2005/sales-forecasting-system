@@ -1,68 +1,98 @@
 from src.utils.exception import CustomException
 from src.utils.logger import logging
 from dataclasses import dataclass
-from darts.models.forecasting.lgbm import LightGBMModel
+
+import pandas as pd
+import lightgbm as lgb
 import joblib
 import os
+import math
+
+
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+from category_encoders import OrdinalEncoder
 
 @dataclass
 class ModelTrainerConfig:
-    timeseries_data:str = os.path.join("artifacts", "timeseries_data.joblib")
-    covariates:str = os.path.join("artifacts", "covariates.joblib")
-    oil_model:str = os.path.join("artifacts", "oil_model.joblib")
-    trained_model:str = os.path.join("artifacts", "trained_model.joblib")
+    train_data = os.path.join("artifacts", "train_data.csv")
+    trained_model = os.path.join("artifacts", "trained_model.joblib")
+    encoder = os.path.join("artifacts", "encoder.joblib")
 
 class ModelTrainer:
+
     def __init__(self):
-        self.modeltrainerconfig = ModelTrainerConfig()
+        self.config = ModelTrainerConfig()
         logging.info(">>> MODEL TRAINER STARTED <<<")
 
     def train_model(self):
-
-        """
-        This function is responsible for training a model on oil prices for oil forecasts and also for training the final model to forecast sales
-        """
-
-        logging.info("executing train_model function")
         try:
-            timeseries_data = joblib.load(self.modeltrainerconfig.timeseries_data)
-            covariates = joblib.load(self.modeltrainerconfig.covariates)
+            print("Loading training data...")
 
-            logging.info("training LightGBM Model for producing oil forecasts")
-            series = covariates[str((1, "AUTOMOTIVE"))]["dcoilwtico"]
-            oil_model = LightGBMModel(
-                lags = 25,
-                output_chunk_length = 1,
-                n_estimators = 500,
-                verbosity = 0
+            df = pd.read_csv(self.config.train_data)
+
+            print("Creating date features...")
+
+            df["date"] = pd.to_datetime(df["date"])
+
+            df["year"] = df["date"].dt.year
+            df["month"] = df["date"].dt.month
+            df["day"] = df["date"].dt.day
+            df["dayofweek"] = df["date"].dt.dayofweek
+
+            df.drop(columns=["date", "id"], inplace=True)
+
+            print("Encoding categorical columns...")
+
+            categorical_cols = [
+                "family",
+                "city",
+                "state",
+                "store_type"
+            ]
+
+            encoder = OrdinalEncoder(cols=categorical_cols)
+
+            df[categorical_cols] = encoder.fit_transform(df[categorical_cols])
+
+            X = df.drop(columns=["sales"])
+            y = df["sales"]
+
+            print("Splitting dataset...")
+
+            X_train, X_test, y_train, y_test = train_test_split(
+                X,
+                y,
+                test_size=0.2,
+                random_state=42
             )
-            oil_model.fit(series = series)
 
-            logging.info("creating the final LightGBM Model and training it to forecast sales")
+            print("Training LightGBM model...")
 
-            model = LightGBMModel(
-                lags = [-1, -2, -6, -7, -8, -13, -14, -15, -20, -21, -27, -28, -35, -42, -49, -56, -63],
-                lags_past_covariates = [-1, -2, -6, -7, -8, -13, -14, -15, -20, -21, -27, -28, -35],
-                output_chunk_length = 1,
-                n_estimators = 1000,
-                verbosity = 0
+            model = lgb.LGBMRegressor(
+                n_estimators=300,
+                learning_rate=0.05,
+                max_depth=10,
+                random_state=42
             )
 
-            logging.info("fitting the LightGBM Model for forecasting sales")
+            model.fit(X_train, y_train)
 
-            model.fit(
-                series = [timeseries_data[component] for component in timeseries_data.components],
-                past_covariates = [covariates[cov] for cov in timeseries_data.components]
-            )
+            predictions = model.predict(X_test)
 
-            logging.info("saving the trained models to artifacts")
+            mae = mean_absolute_error(y_test, predictions)
+            
+            rmse = math.sqrt(mean_squared_error(y_test, predictions))
 
-            joblib.dump(oil_model, self.modeltrainerconfig.oil_model)
-            joblib.dump(model, self.modeltrainerconfig.trained_model)
+            print(f"MAE  : {mae:.2f}")
+            print(f"RMSE : {rmse:.2f}")
 
-            logging.info("models saved successfully")
-            logging.info(">>> MODEL TRAINER COMPLETED <<<")
+            print("Saving model...")
+
+            joblib.dump(model, self.config.trained_model)
+            joblib.dump(encoder, self.config.encoder)
+
+            print("✅ Model saved successfully!")
 
         except Exception as e:
-            logging.info(CustomException(e))
-            print(CustomException(e))
+            raise CustomException(e)    

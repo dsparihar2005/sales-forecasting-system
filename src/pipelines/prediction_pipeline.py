@@ -1,67 +1,57 @@
-from src.utils import generate_covariates
-from src.utils.exception import CustomException
-import joblib
 import os
-from typing import List
+import joblib
+import pandas as pd
 from dataclasses import dataclass
+
 
 @dataclass
 class PredictionPipelineConfig:
-    oil_model_path:str = os.path.join("artifacts", "oil_model.joblib")
-    trained_model_path:str = os.path.join("artifacts", "trained_model.joblib")
-    covariates_path:str = os.path.join("artifacts", "covariates.joblib")
-    timeseries_data_path:str = os.path.join("artifacts", "timeseries_data.joblib")
+    model_path = os.path.join("artifacts", "trained_model.joblib")
+    encoder_path = os.path.join("artifacts", "encoder.joblib")
+
 
 class PredictionPipeline:
+
     def __init__(self):
-        self.predictionpipelineconfig = PredictionPipelineConfig()
+        self.model = joblib.load(PredictionPipelineConfig.model_path)
+        self.encoder = joblib.load(PredictionPipelineConfig.encoder_path)
 
-    def produce_forecasts(
+    def predict(
         self,
-        store_nbr:int,
-        family:str,
-        horizon:int,
-        onpromotion:List[int],
-        is_holiday:List[int],
+        store_nbr,
+        family,
+        onpromotion,
+        dcoilwtico,
+        city,
+        state,
+        store_type,
+        cluster,
+        is_holiday,
+        date,
     ):
-        try:
-            # Loading models and previous covariates
-            oil_model = joblib.load(self.predictionpipelineconfig.oil_model_path)
-            trained_model = joblib.load(self.predictionpipelineconfig.trained_model_path)
-            covariates = joblib.load(self.predictionpipelineconfig.covariates_path)
-            timeseries_data = joblib.load(self.predictionpipelineconfig.timeseries_data_path)
 
-            # generating oil forecasts for 30 days
-            oil_forecasts = oil_model.predict(n = 30).pd_series().to_list()
+        date = pd.to_datetime(date)
 
-            # generating new past covariates for final model
-            covariate = generate_covariates(
-                horizon = horizon,
-                onpromotion = onpromotion,
-                oil_forecasts = oil_forecasts,
-                is_holiday = is_holiday,
-                trained_last_date = oil_model.training_series.end_time()
-            )
+        sample = pd.DataFrame({
+            "store_nbr": [store_nbr],
+            "family": [family],
+            "onpromotion": [onpromotion],
+            "dcoilwtico": [dcoilwtico],
+            "city": [city],
+            "state": [state],
+            "store_type": [store_type],
+            "cluster": [cluster],
+            "is_holiday": [is_holiday],
+            "year": [date.year],
+            "month": [date.month],
+            "day": [date.day],
+            "dayofweek": [date.dayofweek]
+        })
 
-            if type(covariate) == str:
-                return covariate
-            else:
-                pass
+        categorical = ["family", "city", "state", "store_type"]
 
-            series_name = str((store_nbr, family))
-            if series_name not in covariates.keys():
-                return "Invalid combination of store_nbr and family supplied"
-            else:
-                pass
-            new_covariates = covariates[series_name].append(covariate)
+        sample[categorical] = self.encoder.transform(sample[categorical])
 
-            # generating sales predictions for the supplied forecast horizon
-            predictions = trained_model.predict(
-                n = horizon,
-                series = timeseries_data[series_name],
-                past_covariates = new_covariates
-            )
+        prediction = self.model.predict(sample)
 
-            return [round(x, 2) for x in predictions.pd_series().to_list()]
-        except Exception as e:
-            print(CustomException(e))
+        return round(float(prediction[0]), 2)
